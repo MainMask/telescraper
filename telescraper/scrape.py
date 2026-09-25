@@ -17,7 +17,7 @@ from telethon.errors import FloodWaitError, ServerError, TimedOutError
 from telethon.tl.functions.messages import GetMessageReactionsListRequest
 from telethon.tl.types import PeerChannel, PeerUser, User
 
-from telescraper.config import Credentials
+from telescraper.config import Credentials, session_for
 from telescraper.datafiles import clean_xml_text, format_duration, save_table
 
 SEP = "-" * 80
@@ -529,7 +529,7 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
               f"{shard_index} shard(s), continuing from id {resume_last_id or 'newest'}")
         print(SEP)
 
-    client = TelegramClient(params.session, creds.api_id, creds.api_hash,
+    client = TelegramClient(session_for(creds, params.session), creds.api_id, creds.api_hash,
                             flood_sleep_threshold=FLOOD_SLEEP_THRESHOLD,
                             connection_retries=CONNECTION_RETRIES,
                             retry_delay=RETRY_DELAY,

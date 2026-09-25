@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+from telethon.sessions import StringSession
 
 
 @dataclass
@@ -12,6 +13,7 @@ class Credentials:
     api_hash: str
     phone: str | None = None
     password: str | None = None
+    session_string: str | None = None
 
 
 def load_credentials() -> Credentials:
@@ -38,4 +40,16 @@ def load_credentials() -> Credentials:
         api_hash=api_hash,
         phone=os.getenv("TG_PHONE") or None,
         password=os.getenv("TG_PASSWORD") or None,
+        session_string=os.getenv("TG_SESSION_STRING") or None,
     )
+
+
+def session_for(creds: Credentials, session: str) -> StringSession | str:
+    """TG_SESSION_STRING wins over the session file when it is set."""
+    if not creds.session_string:
+        return session
+    try:
+        return StringSession(creds.session_string)
+    except ValueError:  # also binascii.Error (bad padding) from a truncated paste
+        raise SystemExit("TG_SESSION_STRING is not a valid session string. "
+                         "Copy it again from `telescraper login --string`.")

@@ -16,7 +16,7 @@ from telethon.errors import FloodWaitError
 from telethon.tl.types import MessageService
 
 from telescraper.analysis import _count_comments
-from telescraper.config import Credentials
+from telescraper.config import Credentials, session_for
 from telescraper.datafiles import read_table, resolve_inputs, save_table
 from telescraper.scrape import (
     CONNECTION_RETRIES,
@@ -113,7 +113,7 @@ async def _verify(creds: Credentials, params: VerifyParams):
     saved = set(df["_id"])
     id_min, id_max = min(saved), max(saved)
 
-    client = TelegramClient(params.session, creds.api_id, creds.api_hash,
+    client = TelegramClient(session_for(creds, params.session), creds.api_id, creds.api_hash,
                             flood_sleep_threshold=FLOOD_SLEEP_THRESHOLD,
                             connection_retries=CONNECTION_RETRIES,
                             retry_delay=RETRY_DELAY,

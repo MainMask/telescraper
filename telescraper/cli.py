@@ -61,7 +61,7 @@ def cmd_login(args) -> None:
     from telescraper.config import load_credentials
     from telescraper.login import login
 
-    login(load_credentials(), args.session)
+    login(load_credentials(), args.session, args.string)
 
 
 def cmd_menu(args) -> None:
@@ -153,6 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
     lg = sub.add_parser("login", help="authorise once (asks for the Telegram code) and save the session")
     lg.add_argument("--session", default="telescraper",
                     help="session name/path (default: ./telescraper.session)")
+    lg.add_argument("--string", action="store_true",
+                    help="print a session string for TG_SESSION_STRING instead of saving a .session file")
     lg.set_defaults(func=cmd_login)
 
     s = sub.add_parser("scrape", help="scrape channels/groups into parquet or xlsx")

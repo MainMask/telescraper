@@ -75,6 +75,11 @@ Telethon asks for the login code (and 2FA password) in the terminal and saves th
 triggers this login on its first run if you skip `login`.) Keep that file private; deleting it
 just means logging in again.
 
+**Session string instead of a file** — `telescraper login --string` asks for the code the
+same way but prints `TG_SESSION_STRING=...` instead of writing a `.session` file. Put that line
+in `.env`; when it is set, `login`, `scrape` and `verify` use it and ignore `--session`. The string gives
+full access to the account — treat it like a password.
+
 ---
 
 ## Usage
