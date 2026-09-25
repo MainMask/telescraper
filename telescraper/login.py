@@ -4,7 +4,7 @@ import asyncio
 
 from telethon import TelegramClient
 
-from telegram_scraper.config import Credentials
+from telescraper.config import Credentials
 
 
 async def _login(creds: Credentials, session: str) -> None:

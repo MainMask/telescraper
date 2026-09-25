@@ -1,4 +1,4 @@
-"""Interactive input()-based wizard that builds and runs a `telegram-scraper` command."""
+"""Interactive input()-based wizard that builds and runs a `telescraper` command."""
 
 import re
 import shlex
@@ -165,7 +165,7 @@ def _participants_argv(p: Prompt) -> list[str]:
 def _guess_verify_defaults(path: str) -> dict:
     """Best-effort channel + date bounds from a scraped posts file, so the menu can
     pre-fill `verify`'s arguments instead of making the user retype them."""
-    from telegram_scraper.datafiles import read_table
+    from telescraper.datafiles import read_table
     import pandas as pd
 
     out: dict = {}
@@ -229,13 +229,13 @@ _ACTIONS = {
 
 
 def _dispatch(argv: list[str]) -> None:
-    from telegram_scraper import cli
+    from telescraper import cli
 
     cli.main(argv)
 
 
 def _print_menu() -> None:
-    print(f"\n{SEP}\n telegram-scraper\n{SEP}")
+    print(f"\n{SEP}\n telescraper\n{SEP}")
     for key, (label, description, _) in _ACTIONS.items():
         print(f"  {key}) {label:<8} - {description}")
     print("  0) quit")
@@ -256,7 +256,7 @@ def run_menu(prompt: Prompt | None = None, dispatch=None) -> None:
                 print("  ! unknown option")
                 continue
             argv = entry[2](prompt)
-            print("\n  telegram-scraper " + " ".join(shlex.quote(a) for a in argv) + "\n")
+            print("\n  telescraper " + " ".join(shlex.quote(a) for a in argv) + "\n")
             run = prompt.yes_no("Run now?", True)
         except (EOFError, KeyboardInterrupt):
             print()

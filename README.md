@@ -1,4 +1,4 @@
-# telegram-scraper
+# telescraper
 
 A command-line tool for scraping and analysing data from **Telegram channels, groups and chats**
 using the [Telethon](https://docs.telethon.dev/) library. It extracts message content, author
@@ -7,7 +7,7 @@ information, reactions, views, shares and comments, and stores the result as **A
 
 This is a full rewrite of the original Jupyter/Colab notebook so it runs from a normal terminal:
 credentials come from a `.env` file, run parameters are command-line flags, and the five former
-analysis scripts are now sub-commands of a single `telegram-scraper` CLI.
+analysis scripts are now sub-commands of a single `telescraper` CLI.
 
 > Original notebook and academic project by **Ergon Cugler de Moraes Silva** —
 > <https://github.com/ergoncugler/web-scraping-telegram/>. See *Citation* below.
@@ -34,18 +34,18 @@ cp .env.example .env        # set TG_API_ID, TG_API_HASH
 docker compose build
 
 # authorise once (asks for the Telegram code) — session saved to ./data/
-docker compose run --rm telegram-scraper login
+docker compose run --rm telescraper login
 
 # scrape (writes to ./data/output/)
-docker compose run --rm telegram-scraper scrape \
+docker compose run --rm telescraper scrape \
   --channels '@channel' --date-min 01.01.2024 --date-max 31.01.2024 --name Test
 
 # interactive menu
-docker compose run --rm telegram-scraper menu
+docker compose run --rm telescraper menu
 
 # analysis commands work the same (paths are relative to /data)
 # the _<from>-<to> suffix is the span of posts actually collected — check output/ for the real name
-docker compose run --rm telegram-scraper read output/Test_posts_02.01.2024-30.01.2024.parquet --head 20
+docker compose run --rm telescraper read output/Test_posts_02.01.2024-30.01.2024.parquet --head 20
 ```
 
 - `./data/` holds the session and all output — back it up, keep it private.
@@ -53,7 +53,7 @@ docker compose run --rm telegram-scraper read output/Test_posts_02.01.2024-30.01
   a resume checkpoint; re-run the same command with `--resume`. `docker stop` (SIGTERM)
   keeps only the periodic in-run checkpoints.
 - Without compose:
-  `docker build -t telegram-scraper . && docker run --rm -it --init --env-file .env -v "$PWD/data:/data" telegram-scraper login`
+  `docker build -t telescraper . && docker run --rm -it --init --env-file .env -v "$PWD/data:/data" telescraper login`
 
 ## Configure credentials (once)
 
@@ -67,26 +67,20 @@ cp .env.example .env
 Then authorise once:
 
 ```bash
-telegram-scraper login
+telescraper login
 ```
 
 Telethon asks for the login code (and 2FA password) in the terminal and saves the session to
-`./telegram-scraper.session`, so every later command runs non-interactively. (`scrape` also
+`./telescraper.session`, so every later command runs non-interactively. (`scrape` also
 triggers this login on its first run if you skip `login`.) Keep that file private; deleting it
 just means logging in again.
-
-> **Upgrading from 2.0** — the command is now `telegram-scraper` (was `telegramscrap`), so
-> `python -m telegram_scraper` replaces `python -m telegramscrap` and you need to reinstall
-> (`pip install .` / `docker compose build`) to refresh the entry point. The default session
-> file is now `telegram-scraper.session`; rename the old `telegramscrap.session` (or run
-> `login` again). Scrape outputs now carry a `_<from>-<to>` date span in their names.
 
 ---
 
 ## Usage
 
 ```
-telegram-scraper <command> [options]        # or:  python -m telegram_scraper <command>
+telescraper <command> [options]        # or:  python -m telescraper <command>
 ```
 
 | Command   | What it does |
@@ -104,18 +98,18 @@ telegram-scraper <command> [options]        # or:  python -m telegram_scraper <c
 | `links`   | extract and count `t.me` links from `Content` (snowball sampling) |
 | `verify`  | probe the live channel for posts a scrape missed (id-gap + bounds check) |
 
-Run `telegram-scraper <command> --help` for the full flag list.
+Run `telescraper <command> --help` for the full flag list.
 
 ### Interactive menu
 
-Not sure which flags you need? Run `telegram-scraper` with no arguments (or
-`telegram-scraper menu`): it walks you through the options, prints the equivalent
-`telegram-scraper …` command, and runs it. Every flag below still works directly.
+Not sure which flags you need? Run `telescraper` with no arguments (or
+`telescraper menu`): it walks you through the options, prints the equivalent
+`telescraper …` command, and runs it. Every flag below still works directly.
 
 ### Scrape
 
 ```bash
-telegram-scraper scrape \
+telescraper scrape \
   --channels "@LulanoTelegram, @jairbolsonarobrasil" \
   --date-min 2024-10-15 --date-max 2025-01-15 \
   --name Test \
@@ -156,7 +150,7 @@ ready-to-paste `--resume` command; nothing is skipped. Keep runs small with
 
 Output is **parquet** by default. Use `--format excel` only for small runs — Excel truncates
 any cell over 32,767 characters (the `Comments List` of a busy post easily exceeds that);
-`telegram-scraper read <file> --to excel` converts a parquet afterwards.
+`telescraper read <file> --to excel` converts a parquet afterwards.
 
 Comments are fetched only for posts that actually have a linked discussion thread.
 
@@ -207,21 +201,21 @@ differ from the interrupted job. (After a hard power-off, nothing is printed —
 ### Analyse
 
 ```bash
-telegram-scraper combine      --input 'output/*_posts_*.parquet' --output output/unified.parquet
-telegram-scraper comments     --input output/unified.parquet --output output/comments.parquet
-telegram-scraper participants --input output/Test_posts_02.01.2024-30.01.2024.parquet --output output/people.xlsx
-telegram-scraper summary  --input output/unified.parquet --output-base output/resume
-telegram-scraper filter   --input output/unified.parquet --output output/kw --keywords "Trump,Biden,Kamala"
-telegram-scraper sample   --input output/unified.parquet --output output/sample.xlsx --sample-size 10000
-telegram-scraper links    --input output/unified.parquet --output output/links.xlsx
-telegram-scraper read     output/unified.parquet --head 20 --to xlsx
+telescraper combine      --input 'output/*_posts_*.parquet' --output output/unified.parquet
+telescraper comments     --input output/unified.parquet --output output/comments.parquet
+telescraper participants --input output/Test_posts_02.01.2024-30.01.2024.parquet --output output/people.xlsx
+telescraper summary  --input output/unified.parquet --output-base output/resume
+telescraper filter   --input output/unified.parquet --output output/kw --keywords "Trump,Biden,Kamala"
+telescraper sample   --input output/unified.parquet --output output/sample.xlsx --sample-size 10000
+telescraper links    --input output/unified.parquet --output output/links.xlsx
+telescraper read     output/unified.parquet --head 20 --to xlsx
 ```
 
-The `Comments List` column holds comments as a JSON string — `telegram-scraper comments`
+The `Comments List` column holds comments as a JSON string — `telescraper comments`
 explodes it into a flat table (one row per comment, with `Comment Author ID` /
 `Comment Author Username` / `Comment Author Name`), `--format excel` for a spreadsheet.
 
-`telegram-scraper participants` goes further: it merges the commenters with the
+`telescraper participants` goes further: it merges the commenters with the
 `<name>_reactors` file it finds next to `--input` and writes one row per
 person — `ID, Username, Name, Comments, Reactions, Total`. `scrape` runs this
 step for you (`<name>_participants`) unless you pass `--no-participants`. `Username` / `Name` are
@@ -231,7 +225,7 @@ blank when Telegram has none for that account (only the numeric `ID` identifies 
 ### Verify
 
 ```bash
-telegram-scraper verify --input output/Test_posts_02.01.2024-30.01.2024.parquet --channel @Test \
+telescraper verify --input output/Test_posts_02.01.2024-30.01.2024.parquet --channel @Test \
   --date-min 01.01.2020 --date-max 31.12.2024 --output output/Test_missed.parquet
 ```
 
@@ -281,7 +275,7 @@ The tests are offline (no Telegram, no credentials) and cover the pure helpers.
 ## Project layout
 
 ```
-telegram_scraper/
+telescraper/
   cli.py         argparse entry point + sub-command dispatch
   menu.py        interactive input()-based wizard over the CLI flags
   config.py      load TG_* credentials from .env

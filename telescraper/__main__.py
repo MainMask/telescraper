@@ -1,4 +1,4 @@
-from telegram_scraper.cli import main
+from telescraper.cli import main
 
 if __name__ == "__main__":
     main()

@@ -2,8 +2,8 @@
 
 import pytest
 
-from telegram_scraper.cli import build_parser, main
-from telegram_scraper.menu import Prompt, run_menu
+from telescraper.cli import build_parser, main
+from telescraper.menu import Prompt, run_menu
 
 
 def _prompt(answers):
@@ -17,7 +17,7 @@ def _valid(argv):
 
 
 def test_scrape_argv_minimal():
-    from telegram_scraper.menu import _scrape_argv
+    from telescraper.menu import _scrape_argv
 
     argv = _scrape_argv(_prompt(["@durov", "2025-08-01", "2025-08-07", "test",
                                  "", "", "", "", "", "", "", "", ""]))
@@ -27,7 +27,7 @@ def test_scrape_argv_minimal():
 
 
 def test_scrape_argv_extras_disabled():
-    from telegram_scraper.menu import _scrape_argv
+    from telescraper.menu import _scrape_argv
 
     argv = _scrape_argv(_prompt(["@a", "2025-01-01", "2025-01-02", "t",
                                  "", "", "", "", "", "n", "n", "n", ""]))
@@ -38,7 +38,7 @@ def test_scrape_argv_extras_disabled():
 
 
 def test_scrape_argv_non_default_options():
-    from telegram_scraper.menu import _scrape_argv
+    from telescraper.menu import _scrape_argv
 
     argv = _scrape_argv(_prompt(["@a", "2025-01-01", "2025-01-02", "t",
                                  "trump", "50", "3600", "data", "excel", "", "", "", ""]))
@@ -51,7 +51,7 @@ def test_scrape_argv_non_default_options():
 
 
 def test_scrape_argv_numeric_id():
-    from telegram_scraper.menu import _scrape_argv
+    from telescraper.menu import _scrape_argv
 
     argv = _scrape_argv(_prompt(["-1001629147115", "2025-01-01", "2025-01-02", "t",
                                  "", "", "", "", "", "", "", "", ""]))
@@ -60,7 +60,7 @@ def test_scrape_argv_numeric_id():
 
 
 def test_scrape_argv_channels_file(tmp_path):
-    from telegram_scraper.menu import _scrape_argv
+    from telescraper.menu import _scrape_argv
 
     f = tmp_path / "chans.txt"
     f.write_text("@a\n@b\n", encoding="utf-8")
@@ -72,7 +72,7 @@ def test_scrape_argv_channels_file(tmp_path):
 
 def test_read_argv_with_conversion(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # no data files -> plain text prompt
-    from telegram_scraper.menu import _read_argv
+    from telescraper.menu import _read_argv
 
     argv = _read_argv(_prompt(["output/f.parquet", "20", "2"]))  # "2" -> excel
     assert argv == ["read", "output/f.parquet", "--head", "20", "--to", "excel"]
@@ -81,7 +81,7 @@ def test_read_argv_with_conversion(tmp_path, monkeypatch):
 
 def test_read_argv_defaults(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from telegram_scraper.menu import _read_argv
+    from telescraper.menu import _read_argv
 
     argv = _read_argv(_prompt(["output/f.parquet", "", ""]))
     assert argv == ["read", "output/f.parquet"]
@@ -92,7 +92,7 @@ def test_read_argv_picks_file_by_number(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "output").mkdir()
     (tmp_path / "output" / "FINAL_a.parquet").write_bytes(b"x")
-    from telegram_scraper.menu import _read_argv
+    from telescraper.menu import _read_argv
 
     argv = _read_argv(_prompt(["1", "", ""]))
     assert argv[1] == "output/FINAL_a.parquet"
@@ -103,7 +103,7 @@ def test_read_argv_typed_path_when_files_listed(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "output").mkdir()
     (tmp_path / "output" / "FINAL_a.parquet").write_bytes(b"x")
-    from telegram_scraper.menu import _read_argv
+    from telescraper.menu import _read_argv
 
     argv = _read_argv(_prompt(["some/other.parquet", "", ""]))
     assert argv[1] == "some/other.parquet"
@@ -113,7 +113,7 @@ def test_comments_argv(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "output").mkdir()
     (tmp_path / "output" / "FINAL_a.parquet").write_bytes(b"x")
-    from telegram_scraper.menu import _comments_argv
+    from telescraper.menu import _comments_argv
 
     argv = _comments_argv(_prompt(["1", "output/a_comments.parquet", ""]))
     assert argv == ["comments", "--input", "output/FINAL_a.parquet",
@@ -125,7 +125,7 @@ def test_participants_argv(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "output").mkdir()
     (tmp_path / "output" / "FINAL_a.parquet").write_bytes(b"x")
-    from telegram_scraper.menu import _participants_argv
+    from telescraper.menu import _participants_argv
 
     argv = _participants_argv(_prompt(["1", "output/people.xlsx", "2"]))  # "2" -> excel
     assert argv == ["participants", "--input", "output/FINAL_a.parquet",
@@ -148,7 +148,7 @@ def _write_posts(tmp_path, name="Baza_posts.parquet", group="@c123",
 def test_verify_argv_prefills_from_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_posts(tmp_path)
-    from telegram_scraper.menu import _verify_argv
+    from telescraper.menu import _verify_argv
 
     argv = _verify_argv(_prompt(["1", "", "", "", "", ""]))  # pick #1, accept every default
     assert argv == ["verify", "--input", "output/Baza_posts.parquet",
@@ -161,7 +161,7 @@ def test_verify_argv_prefills_from_file(tmp_path, monkeypatch):
 def test_verify_argv_prefills_from_dated_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_posts(tmp_path, name="Baza_posts_02.01.2024-30.06.2024.parquet")
-    from telegram_scraper.menu import _verify_argv
+    from telescraper.menu import _verify_argv
 
     argv = _verify_argv(_prompt(["1", "", "", "", "", ""]))
     assert argv[:3] == ["verify", "--input",
@@ -173,7 +173,7 @@ def test_verify_argv_prefills_from_dated_file(tmp_path, monkeypatch):
 def test_verify_argv_overrides(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_posts(tmp_path)
-    from telegram_scraper.menu import _verify_argv
+    from telescraper.menu import _verify_argv
 
     argv = _verify_argv(_prompt(["1", "@realname", "01.01.2020", "31.12.2024",
                                  "output/custom.parquet", "50"]))
@@ -187,7 +187,7 @@ def test_verify_argv_overrides(tmp_path, monkeypatch):
 
 def test_verify_argv_no_metadata(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # no data files -> every field asked as free text
-    from telegram_scraper.menu import _verify_argv
+    from telescraper.menu import _verify_argv
 
     argv = _verify_argv(_prompt(["some/posts.parquet", "@a", "01.01.2024",
                                  "31.12.2024", "", ""]))
@@ -197,7 +197,7 @@ def test_verify_argv_no_metadata(tmp_path, monkeypatch):
 
 
 def test_menu_has_verify():
-    from telegram_scraper.menu import _ACTIONS
+    from telescraper.menu import _ACTIONS
 
     labels = {entry[0] for entry in _ACTIONS.values()}
     assert "verify" in labels and "login" in labels
@@ -243,7 +243,7 @@ def test_menu_unknown_option_reprompts():
 @pytest.mark.parametrize("argv", [[], ["menu"]])
 def test_cli_opens_menu(monkeypatch, argv):
     called = []
-    monkeypatch.setattr("telegram_scraper.menu.run_menu", lambda: called.append(argv))
+    monkeypatch.setattr("telescraper.menu.run_menu", lambda: called.append(argv))
     main(argv)
     assert called == [argv]
 

@@ -15,10 +15,10 @@ from telethon import TelegramClient
 from telethon.errors import FloodWaitError
 from telethon.tl.types import MessageService
 
-from telegram_scraper.analysis import _count_comments
-from telegram_scraper.config import Credentials
-from telegram_scraper.datafiles import read_table, resolve_inputs, save_table
-from telegram_scraper.scrape import (
+from telescraper.analysis import _count_comments
+from telescraper.config import Credentials
+from telescraper.datafiles import read_table, resolve_inputs, save_table
+from telescraper.scrape import (
     CONNECTION_RETRIES,
     FLOOD_SLEEP_THRESHOLD,
     NET_ERRORS,
@@ -40,7 +40,7 @@ class VerifyParams:
     channel: str
     date_min: datetime
     date_max: datetime
-    session: str = "telegram-scraper"
+    session: str = "telescraper"
     output: str = ""
     comment_sample: int = 0
 

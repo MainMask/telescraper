@@ -17,8 +17,8 @@ from telethon.errors import FloodWaitError, ServerError, TimedOutError
 from telethon.tl.functions.messages import GetMessageReactionsListRequest
 from telethon.tl.types import PeerChannel, PeerUser, User
 
-from telegram_scraper.config import Credentials
-from telegram_scraper.datafiles import clean_xml_text, format_duration, save_table
+from telescraper.config import Credentials
+from telescraper.datafiles import clean_xml_text, format_duration, save_table
 
 SEP = "-" * 80
 
@@ -199,7 +199,7 @@ class ScrapeParams:
     timeout: int = 0  # stop after this many seconds; 0 disables the limit
     fmt: str = "parquet"
     out_dir: Path = Path("output")
-    session: str = "telegram-scraper"
+    session: str = "telescraper"
     with_comments: bool = True
     with_reactors: bool = True
     with_participants: bool = True
@@ -695,14 +695,14 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
 
 
 def _resume_command(params: ScrapeParams) -> str:
-    """The `telegram-scraper scrape … --resume` line that continues this run.
+    """The `telescraper scrape … --resume` line that continues this run.
 
     Dates go out as full ISO (`YYYY-MM-DDTHH:MM:SS`) so re-parsing reproduces the
     exact stored bounds — including a `--date-max` that isn't end-of-day.
     """
     src = (["--channels-file", params.channels_file] if params.channels_file
            else ["--channels", ",".join(params.channels)])
-    parts = ["telegram-scraper", "scrape", *src,
+    parts = ["telescraper", "scrape", *src,
              "--date-min", params.date_min.strftime("%Y-%m-%dT%H:%M:%S"),
              "--date-max", params.date_max.strftime("%Y-%m-%dT%H:%M:%S"),
              "--name", params.name]
@@ -716,7 +716,7 @@ def _resume_command(params: ScrapeParams) -> str:
         parts += ["--format", "excel"]
     if params.out_dir != Path("output"):
         parts += ["--out-dir", str(params.out_dir)]
-    if params.session != "telegram-scraper":
+    if params.session != "telescraper":
         parts += ["--session", params.session]
     if not params.with_comments:
         parts.append("--no-comments")
@@ -729,7 +729,7 @@ def _resume_command(params: ScrapeParams) -> str:
 
 
 def run(creds: Credentials, params: ScrapeParams) -> Path:
-    from telegram_scraper.analysis import normalize_posts, participants
+    from telescraper.analysis import normalize_posts, participants
 
     ckpt_dir = params.out_dir / f"{params.name}_partial" / "checkpoint"
     rj = ckpt_dir / "resume.json"

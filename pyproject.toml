@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "telegram-scraper"
+name = "telescraper"
 dynamic = ["version"]
 description = "Terminal tool for scraping and analysing Telegram channels, groups and chats"
 requires-python = ">=3.11"
@@ -21,10 +21,10 @@ dependencies = [
 dev = ["pytest"]
 
 [project.scripts]
-telegram-scraper = "telegram_scraper.cli:main"
+telescraper = "telescraper.cli:main"
 
 [tool.setuptools]
-packages = ["telegram_scraper"]
+packages = ["telescraper"]
 
 [tool.setuptools.dynamic]
-version = {attr = "telegram_scraper.__version__"}
+version = {attr = "telescraper.__version__"}

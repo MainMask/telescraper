@@ -5,13 +5,13 @@ import json
 import pandas as pd
 import pytest
 
-from telegram_scraper.analysis import (
+from telescraper.analysis import (
     _TME_BASE_RE, _TME_RE, _count_comments, _sibling_reactors, combine,
     explode_comments, participants,
 )
-from telegram_scraper.cli import build_parser
-from telegram_scraper.datafiles import clean_xml_text, format_duration, read_table, save_table
-from telegram_scraper.scrape import _channel_ref, _progress_bar, channel_slug, parse_date
+from telescraper.cli import build_parser
+from telescraper.datafiles import clean_xml_text, format_duration, read_table, save_table
+from telescraper.scrape import _channel_ref, _progress_bar, channel_slug, parse_date
 
 
 def test_clean_xml_text_handles_none_and_control_chars():
