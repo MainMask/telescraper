@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 from telethon import utils
-from telethon.errors import BroadcastForbiddenError, FloodWaitError, RpcCallFailError
+from telethon.errors import (
+    BroadcastForbiddenError, ChannelPrivateError, FloodWaitError, RpcCallFailError,
+)
 from telethon.tl.types import Channel, PeerChannel, PeerUser, ReactionEmoji, User
 
 import telescraper.scrape as scrape
@@ -120,6 +122,9 @@ class FakeClient:
 
     async def get_entity(self, arg):
         return types.SimpleNamespace(title="Fake Channel")
+
+    async def get_input_entity(self, arg):
+        return arg
 
     async def get_messages(self, channel, limit=1, offset_date=None):
         msgs = [m for m in _main_messages()
@@ -871,3 +876,43 @@ def test_empty_thread_fresh_post_still_fetched(tmp_path):
     assert client.reply_calls == [20]
     assert json.loads(row["Comments List"])[0]["Comment Author Username"] == "bob"
 
+
+class _DialogsClient:
+    """Knows a numeric-ID channel only after get_dialogs() filled the cache."""
+
+    def __init__(self, cached: bool, miss=ValueError):
+        self.cached, self.miss, self.dialog_calls = cached, miss, 0
+
+    async def get_input_entity(self, arg):
+        if not self.cached:
+            raise self.miss("uncached")
+        return arg
+
+    async def get_dialogs(self):
+        self.dialog_calls += 1
+        self.cached = True
+
+
+@pytest.mark.parametrize("channel, cached, miss, dialog_calls", [
+    ("-1001629147115", False, ValueError, 1),  # private channel by ID, cold cache -> load dialogs
+    ("-1001629147115", False, ChannelPrivateError, 1),  # probe refused instead of "not found"
+    ("-1001629147115", True, ValueError, 0),   # already cached -> no extra request
+    ("@name", False, ValueError, 0),           # usernames resolve on their own
+])
+def test_warm_channel_loads_dialogs_only_on_id_miss(channel, cached, miss, dialog_calls):
+    client = _DialogsClient(cached, miss)
+    loaded = asyncio.run(scrape._warm_channel(client, scrape._channel_ref(channel), False))
+    assert client.dialog_calls == dialog_calls and loaded == bool(dialog_calls)
+
+
+def test_warm_channel_loads_dialogs_once_per_run():
+    client = _DialogsClient(cached=False)
+
+    async def dialogs_without_caching():  # e.g. IDs of channels the account is not in
+        client.dialog_calls += 1
+
+    client.get_dialogs = dialogs_without_caching
+    loaded = False
+    for channel in ("-1001", "-1002", "-1003"):
+        loaded = asyncio.run(scrape._warm_channel(client, scrape._channel_ref(channel), loaded))
+    assert client.dialog_calls == 1

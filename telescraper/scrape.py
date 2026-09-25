@@ -13,7 +13,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from telethon import TelegramClient, utils
-from telethon.errors import FloodWaitError, ServerError, TimedOutError
+from telethon.errors import ChannelPrivateError, FloodWaitError, ServerError, TimedOutError
 from telethon.tl.functions.messages import GetMessageReactionsListRequest
 from telethon.tl.types import PeerChannel, PeerUser, User
 
@@ -239,6 +239,21 @@ def _channel_ref(raw: str) -> _ChannelRef:
         return _ChannelRef(cid, f"c{short}", f"https://t.me/c/{short}")
     name = channel_slug(s)
     return _ChannelRef(raw, name, f"https://t.me/{name}")
+
+
+async def _warm_channel(client, ref: _ChannelRef, dialogs_loaded: bool) -> bool:
+    """A channel given by numeric ID resolves only from the session's entity cache
+    (no username to look up). A fresh or string session has none, so on a miss load
+    the dialog list: its entities land in the cache, as for any response. Returns
+    whether the dialogs are loaded, so a run does it at most once."""
+    if dialogs_loaded or not isinstance(ref.arg, int):
+        return dialogs_loaded
+    try:
+        await client.get_input_entity(ref.arg)
+    except (ValueError, ChannelPrivateError):  # uncached; Telethon's access_hash=0 probe failed
+        await client.get_dialogs()
+        return True
+    return False
 
 
 def parse_date(value: str, *, end_of_day: bool = False) -> datetime:
@@ -538,6 +553,7 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
 
     i, last_id = resume_channel_index, resume_last_id  # for the Ctrl-C handler below
     snapshot_from = 0  # first shard index not yet written to an `_until_` snapshot
+    dialogs_loaded = False
     try:
         for i, channel in enumerate(params.channels):
             if i < resume_channel_index:
@@ -553,6 +569,7 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
             done_channel = False
             try:
                 ref = _channel_ref(channel)
+                dialogs_loaded = await _warm_channel(client, ref, dialogs_loaded)
                 try:
                     title = getattr(await client.get_entity(ref.arg), "title", None)
                 except Exception:

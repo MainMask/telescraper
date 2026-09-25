@@ -51,6 +51,9 @@ class FakeVerifyClient:
     async def get_entity(self, arg):
         return types.SimpleNamespace(title="Fake Ch")
 
+    async def get_input_entity(self, arg):
+        return arg
+
     async def get_messages(self, entity, ids=None, limit=None, reverse=False, **k):
         if ids is not None:
             return [CHANNEL.get(i) for i in ids]

@@ -26,6 +26,7 @@ from telescraper.scrape import (
     RETRY_DELAY,
     RETRYABLE_RPC,
     _channel_ref,
+    _warm_channel,
 )
 
 SEP = "-" * 80
@@ -124,6 +125,7 @@ async def _verify(creds: Credentials, params: VerifyParams):
     short_threads = []
     try:
         ref = _channel_ref(params.channel)
+        await _warm_channel(client, ref, dialogs_loaded=False)
         entity = await client.get_entity(ref.arg)
         newest = await client.get_messages(entity, limit=1)
         oldest = await client.get_messages(entity, limit=1, reverse=True)
