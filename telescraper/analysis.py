@@ -11,8 +11,13 @@ from tqdm import tqdm
 from telescraper.datafiles import read_table, resolve_inputs, save_table
 
 _URL_RE = re.compile(r"http\S+|www\S+")
-_TME_RE = re.compile(r"(https?://t\.me/[^\s]+)")
-_TME_BASE_RE = re.compile(r"(https?://t\.me/[\w\d\+]+)")
+_TME_RE = re.compile(r"(?<![\w.])((?:https?://)?t\.me/[^\s]+)")  # the scheme is often omitted
+# t.me/s/<name> (web preview) and boost/<name> point at <name>; c/<id>, joinchat/<hash>
+# (counted as +<hash>) and addlist/<hash> keep their key part
+_TME_BASE_RE = re.compile(r"(?:https?://)?t\.me/(?:s/|boost/)?(c/\d+|joinchat/[\w+]+|addlist/[\w+]+|[\w+]+)")
+# t.me paths that are Telegram features, not channels or groups
+_TME_SERVICE = {"share", "addstickers", "addemoji", "addtheme", "iv", "proxy", "socks",
+                "setlanguage", "boost"}
 
 
 def _require_columns(df: pd.DataFrame, columns, source: str) -> None:
@@ -29,6 +34,17 @@ def _count_comments(comments_list) -> int:
     if isinstance(comments_list, str):
         comments_list = json.loads(comments_list)
     return sum(1 for item in comments_list if item.get("Type") == "comment")
+
+
+def _parse_comments_list(x):
+    """Parsed Comments List for a readable xlsx; a cell that isn't valid JSON
+    (e.g. truncated by Excel's 32k limit) is kept as the raw string."""
+    if pd.isnull(x):
+        return x
+    try:
+        return json.loads(x)
+    except json.JSONDecodeError:
+        return x
 
 
 def normalize_posts(df: pd.DataFrame, dedup_cols=("Group", "Message ID"),
@@ -74,8 +90,7 @@ def combine(inputs: str, output: str, dedup_cols: list[str]) -> None:
     n_comments = int(combined["Comments"].sum())
     print(f"Rows: {len(combined)} | comments: {n_comments} | total: {len(combined) + n_comments}")
 
-    save_table(combined, output, "parquet")
-    print(f"Saved: {output}")
+    print(f"Saved: {save_table(combined, output, 'parquet')}")
 
 
 def _save(df: pd.DataFrame, output: str, fmt: str) -> Path:
@@ -96,7 +111,12 @@ def _comment_pairs(df: pd.DataFrame):
         post = dict(zip(cols, values))
         raw = post.get("Comments List")
         if isinstance(raw, str):
-            items = json.loads(raw) if raw.strip() else []
+            try:
+                items = json.loads(raw) if raw.strip() else []
+            except json.JSONDecodeError:
+                print(f"  ! {post.get('Group')}/{post.get('Message ID')}: Comments List is not valid "
+                      f"JSON (e.g. truncated by Excel's 32k limit) - skipped; use --format parquet")
+                items = []
         elif isinstance(raw, list):
             items = raw
         else:
@@ -238,15 +258,15 @@ def _sample_proportionally(df, text_column, category_column, sample_size):
     total_rows = len(df)
     for category in tqdm(df[category_column].unique(), desc="Sampling categories"):
         cat_df = df[df[category_column] == category]
-        target = max(1, int(np.ceil(len(cat_df) / total_rows * sample_size)))
+        target = min(len(cat_df), max(1, int(np.ceil(len(cat_df) / total_rows * sample_size))))
         non_empty = cat_df[cat_df[text_column].notna() & (cat_df[text_column].str.strip() != "")]
         if len(non_empty) >= target:
             parts.append(non_empty.sample(target, random_state=0))
         elif not non_empty.empty:
             rest = cat_df[~cat_df.index.isin(non_empty.index)]
-            parts.append(pd.concat([non_empty, rest.sample(target - len(non_empty), replace=True, random_state=0)]))
+            parts.append(pd.concat([non_empty, rest.sample(target - len(non_empty), random_state=0)]))
         else:
-            parts.append(cat_df.sample(target, replace=True, random_state=0))
+            parts.append(cat_df.sample(target, random_state=0))
     return pd.concat(parts)
 
 
@@ -257,10 +277,9 @@ def sample(input_path: str, output: str, text_col: str, category_col: str, sampl
     df = df[df[text_col].str.len() > min_length].copy()
     df[text_col] = df[text_col].apply(lambda t: _URL_RE.sub("", str(t)))
     if "Comments List" in df.columns:
-        df["Comments List"] = df["Comments List"].apply(lambda x: json.loads(x) if pd.notnull(x) else x)
+        df["Comments List"] = df["Comments List"].apply(_parse_comments_list)
     sampled = _sample_proportionally(df, text_col, category_col, sample_size)
-    save_table(sampled, output, "excel")
-    print(f"Saved: {output} ({len(sampled)} rows)")
+    print(f"Saved: {save_table(sampled, output, 'excel')} ({len(sampled)} rows)")
 
 
 def filter_keywords(input_path: str, output: str, content_col: str, keywords: list[str], max_rows_per_file: int) -> None:
@@ -268,14 +287,17 @@ def filter_keywords(input_path: str, output: str, content_col: str, keywords: li
     df = read_table(input_path)
     _require_columns(df, [content_col], input_path)
     if "Comments List" in df.columns:
-        df["Comments List"] = df["Comments List"].apply(lambda x: json.loads(x) if pd.notnull(x) else x)
+        df["Comments List"] = df["Comments List"].apply(_parse_comments_list)
+    clash = [k for k in keywords if k in df.columns or k == "Keyword_Count"]
+    if clash:
+        raise SystemExit(f"keyword(s) {clash} match existing column names; rename or drop them")
     for kw in tqdm(keywords, desc="Keyword columns"):
         df[kw] = df[content_col].astype(str).apply(lambda x: 1 if kw in x else 0)
     df["Keyword_Count"] = df[keywords].sum(axis=1)
     filtered = df[df["Keyword_Count"] > 0]
     print(f"Matched rows: {len(filtered)}")
 
-    num_files = (len(filtered) // max_rows_per_file) + 1
+    num_files = max(1, int(np.ceil(len(filtered) / max_rows_per_file)))
     for i in range(num_files):
         chunk = filtered.iloc[i * max_rows_per_file:(i + 1) * max_rows_per_file]
         if chunk.empty:
@@ -294,9 +316,15 @@ def links(input_path: str, output: str) -> None:
     for sublist in tqdm(found.tolist(), desc="Normalising links"):
         for link in sublist:
             m = _TME_BASE_RE.match(link)
-            if m:
-                normalised.append(m.group(1))
+            if not m:
+                continue
+            key = m.group(1)
+            if key.startswith("joinchat/"):  # legacy invite = t.me/+<hash>, as in channel_slug
+                key = "+" + key[len("joinchat/"):]
+            if not key.startswith(("c/", "+", "addlist/")):  # invite hashes are case-sensitive
+                key = key.lower()                                          # usernames are not
+            if key not in _TME_SERVICE:
+                normalised.append(f"https://t.me/{key}")
     counts = pd.Series(normalised).value_counts().reset_index()
     counts.columns = ["Telegram Link", "Frequency"]
-    save_table(counts, output, "excel")
-    print(f"Saved: {output} ({len(counts)} unique links)")
+    print(f"Saved: {save_table(counts, output, 'excel')} ({len(counts)} unique links)")

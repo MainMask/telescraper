@@ -14,7 +14,8 @@ async def _login(creds: Credentials, session: str, as_string: bool) -> None:
     await client.start(phone=creds.phone, password=creds.password)
     try:
         me = await client.get_me()
-        print(f"Logged in as {me.first_name} (@{me.username}), id {me.id}")
+        handle = f" (@{me.username})" if me.username else ""
+        print(f"Logged in as {me.first_name}{handle}, id {me.id}")
         if isinstance(client.session, StringSession):
             print("Add this line to .env (it gives full access to the account - keep it private):")
             print(f"TG_SESSION_STRING={client.session.save()}")

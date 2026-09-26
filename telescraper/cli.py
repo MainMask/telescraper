@@ -226,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", required=True)
     p.add_argument("--text-col", default="Content")
     p.add_argument("--category-col", default="Group")
-    p.add_argument("--sample-size", type=int, default=10_000)
+    p.add_argument("--sample-size", type=_positive_int, default=10_000)
     p.add_argument("--min-length", type=int, default=20)
     p.set_defaults(func=cmd_sample)
 
@@ -235,7 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--output", required=True, help="base name; _unique.xlsx / _part_N.xlsx appended")
     f.add_argument("--content-col", default="Content")
     f.add_argument("--keywords", required=True, help="comma-separated")
-    f.add_argument("--max-rows-per-file", type=int, default=1_000_000)
+    f.add_argument("--max-rows-per-file", type=_positive_int, default=1_000_000)
     f.set_defaults(func=cmd_filter)
 
     lk = sub.add_parser("links", help="extract and count t.me links from Content")

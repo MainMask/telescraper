@@ -19,17 +19,14 @@ from telescraper.analysis import _count_comments
 from telescraper.config import Credentials, session_for
 from telescraper.datafiles import read_table, resolve_inputs, save_table
 from telescraper.scrape import (
-    CONNECTION_RETRIES,
-    FLOOD_SLEEP_THRESHOLD,
+    CLIENT_KWARGS,
     NET_ERRORS,
-    REQUEST_RETRIES,
-    RETRY_DELAY,
     RETRYABLE_RPC,
+    SEP,
     _channel_ref,
     _warm_channel,
 )
 
-SEP = "-" * 80
 ID_BATCH = 200          # messages.getMessages accepts up to 200 ids per call
 BATCH_PAUSE = 0.3       # gentle spacing between probe batches
 BOUND_PROBE_CAP = 5000  # cap the id sweep beyond the scraped range
@@ -51,12 +48,18 @@ def _chunks(seq, n):
         yield seq[i:i + n]
 
 
-def _load_saved(pattern: str) -> pd.DataFrame:
+def _load_saved(pattern: str, group: str) -> pd.DataFrame:
     df = pd.concat([read_table(p) for p in resolve_inputs(pattern)], ignore_index=True)
     if "Message ID" not in df.columns:
         raise SystemExit(f"{pattern}: no 'Message ID' column — not a scraped posts file")
     if "Reactor ID" in df.columns:
         raise SystemExit(f"{pattern}: looks like a *_reactors file — pass the *_posts file")
+    if "Group" in df.columns:  # a multi-channel scrape: ids of other channels are not ours
+        groups = df["Group"].astype(str)
+        df = df[groups.str.lower() == group.lower()]
+        if df.empty:
+            raise SystemExit(f"{pattern}: no rows for {group}; groups in the file: "
+                             f"{sorted(set(groups))}")
     df = df[df["Message ID"].notna()].drop_duplicates(subset="Message ID").copy()
     df["_id"] = df["Message ID"].astype(int)
     return df
@@ -110,23 +113,23 @@ async def _check_comments(client, entity, df: pd.DataFrame, params: VerifyParams
 
 
 async def _verify(creds: Credentials, params: VerifyParams):
-    df = _load_saved(params.input)
+    ref = _channel_ref(params.channel)
+    df = _load_saved(params.input, f"@{ref.slug}")
     saved = set(df["_id"])
     id_min, id_max = min(saved), max(saved)
 
     client = TelegramClient(session_for(creds, params.session), creds.api_id, creds.api_hash,
-                            flood_sleep_threshold=FLOOD_SLEEP_THRESHOLD,
-                            connection_retries=CONNECTION_RETRIES,
-                            retry_delay=RETRY_DELAY,
-                            request_retries=REQUEST_RETRIES)
+                            **CLIENT_KWARGS)
     await client.start(phone=creds.phone, password=creds.password)
 
     flagged = []          # (id, date, reason)
     short_threads = []
     try:
-        ref = _channel_ref(params.channel)
         await _warm_channel(client, ref, dialogs_loaded=False)
-        entity = await client.get_entity(ref.arg)
+        try:
+            entity = await client.get_entity(ref.arg)
+        except ValueError as exc:  # unknown username, or a chat this account is not in
+            raise SystemExit(f"{params.channel}: {exc}")
         newest = await client.get_messages(entity, limit=1)
         oldest = await client.get_messages(entity, limit=1, reverse=True)
         total = (await client.get_messages(entity, limit=0)).total

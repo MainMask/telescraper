@@ -9,7 +9,7 @@ from telescraper.config import Credentials, load_credentials, session_for
 
 
 def test_load_credentials_reads_session_string(monkeypatch):
-    monkeypatch.setattr(config, "load_dotenv", lambda: None)  # keep a real .env out of the test
+    monkeypatch.setattr(config, "load_dotenv", lambda *a, **k: None)  # keep a real .env out of the test
     monkeypatch.setenv("TG_API_ID", "1")
     monkeypatch.setenv("TG_API_HASH", "h")
     monkeypatch.setenv("TG_SESSION_STRING", "abc")
@@ -29,3 +29,37 @@ def test_session_for_prefers_string_over_file():
 def test_session_for_rejects_malformed_string(bad):
     with pytest.raises(SystemExit, match="TG_SESSION_STRING"):
         session_for(Credentials(1, "h", session_string=bad), "file")
+
+
+def test_login_without_username_prints_no_at_none(monkeypatch, capsys):
+    import types
+
+    from telescraper import login
+
+    class FakeClient:
+        session = "file"
+
+        def __init__(self, *a, **k):
+            pass
+
+        async def start(self, **k):
+            return self
+
+        async def get_me(self):
+            return types.SimpleNamespace(first_name="Ann", username=None, id=1)
+
+        async def disconnect(self):
+            return None
+
+    monkeypatch.setattr(login, "TelegramClient", FakeClient)
+    login.login(Credentials(1, "h"), "file")
+    assert "Logged in as Ann, id 1" in capsys.readouterr().out
+
+
+def test_load_credentials_reads_dotenv_from_cwd(monkeypatch, tmp_path):
+    for var in ("TG_API_ID", "TG_API_HASH", "TG_SESSION_STRING"):
+        monkeypatch.setenv(var, "x")  # recorded, so teardown removes what dotenv sets
+        monkeypatch.delenv(var)
+    (tmp_path / ".env").write_text("TG_API_ID=42\nTG_API_HASH=abc\n")
+    monkeypatch.chdir(tmp_path)
+    assert load_credentials().api_id == 42  # not the .env next to the package

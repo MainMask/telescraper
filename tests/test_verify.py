@@ -154,3 +154,34 @@ def test_verify_subcommand_parses():
         ["verify", "--input", "x.parquet", "--channel", "@c",
          "--date-min", "01.01.2024", "--date-max", "31.12.2024"])
     assert args.func is cmd_verify
+
+
+def _multi_channel_params(tmp_path, channel):
+    # one scrape of two channels: @a missed its post 98; @b has a post 98 of its own
+    return VerifyParams(
+        input=_write_input(tmp_path, [100, 90, 88, 98], Group=["@a", "@a", "@a", "@b"]),
+        channel=channel,
+        date_min=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        date_max=datetime(2024, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
+    )
+
+
+def test_verify_uses_only_the_checked_channels_rows(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        verify.run(Credentials(1, "h"), _multi_channel_params(tmp_path, "https://t.me/A"))
+    assert "missed id 98" in capsys.readouterr().out
+
+
+def test_verify_unknown_channel_lists_groups(tmp_path):
+    with pytest.raises(SystemExit, match=r"@zzz.*'@a', '@b'"):
+        verify.run(Credentials(1, "h"), _multi_channel_params(tmp_path, "@zzz"))
+
+
+def test_verify_unresolvable_channel_exits_cleanly(tmp_path, monkeypatch):
+    class UnknownChannelClient(FakeVerifyClient):
+        async def get_entity(self, arg):
+            raise ValueError("Cannot find any entity corresponding to x")
+
+    monkeypatch.setattr(verify, "TelegramClient", UnknownChannelClient)
+    with pytest.raises(SystemExit, match="-100123: Cannot find any entity"):
+        verify.run(Credentials(1, "h"), _params(tmp_path, REAL_IN_WINDOW))

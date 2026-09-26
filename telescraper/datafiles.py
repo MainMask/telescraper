@@ -53,6 +53,7 @@ def save_table(df: pd.DataFrame, path: str | Path, fmt: str | None = None) -> Pa
     # append the extension without clobbering dots that are part of the name
     if path.suffix.lower() != f".{ext}":
         path = path.with_name(f"{path.name}.{ext}")
+    path.parent.mkdir(parents=True, exist_ok=True)
     if ext == "xlsx":
         _warn_if_excel_would_truncate(df)
         df.to_excel(path, index=False, engine="openpyxl")
@@ -68,7 +69,7 @@ def read_table(path: str | Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".parquet":
         return pd.read_parquet(path)
-    if suffix in (".xlsx", ".xls"):
+    if suffix == ".xlsx":
         return pd.read_excel(path)
     if suffix == ".csv":
         return pd.read_csv(path)
@@ -79,7 +80,10 @@ def resolve_inputs(pattern: str) -> list[Path]:
     """Expand a file, a directory (its *.parquet files) or a glob into a sorted list of paths."""
     p = Path(pattern)
     if p.is_dir():
-        return sorted(p.glob("*.parquet"))
+        found = sorted(p.glob("*.parquet"))
+        if not found:
+            raise SystemExit(f"No .parquet files in: {pattern}")
+        return found
     if p.exists():
         return [p]
     matches = sorted(Path(m) for m in glob.glob(pattern))

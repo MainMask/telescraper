@@ -64,6 +64,9 @@ cp .env.example .env
 # edit .env and set TG_API_ID, TG_API_HASH (TG_PHONE and TG_PASSWORD are optional)
 ```
 
+`telescraper` reads `.env` from the directory you run it in (or a parent directory) — the
+same place `./telescraper.session` is saved.
+
 Then authorise once:
 
 ```bash
@@ -122,7 +125,9 @@ telescraper scrape \
 ```
 
 A channel may be given as `@name`, `t.me/name` or a full `https://t.me/name` URL — all are
-reduced to `name`, and the `Group` column is stored normalised as `@name`.
+reduced to `name`, and the `Group` column is stored normalised as `@name`. A web-preview link
+`t.me/s/name` means the same `name`. An invite link `t.me/+hash` (or the older
+`t.me/joinchat/hash`) works for a chat the account is already in; its `Group` is `@+hash`.
 
 It may also be a **numeric ID** such as `-1001629147115` (the form Telegram clients and
 `t.me/c/1629147115/…` links use) — handy for private channels that have no username. The
@@ -155,7 +160,8 @@ ready-to-paste `--resume` command; nothing is skipped. Keep runs small with
 
 Output is **parquet** by default. Use `--format excel` only for small runs — Excel truncates
 any cell over 32,767 characters (the `Comments List` of a busy post easily exceeds that);
-`telescraper read <file> --to excel` converts a parquet afterwards.
+`telescraper read <file> --to excel` converts a parquet afterwards (the copy is written next to
+the source with the new extension, so `--to` the source's own format overwrites the source).
 
 Comments are fetched only for posts that actually have a linked discussion thread.
 
@@ -178,7 +184,7 @@ collected):
   (post-shaped, so `combine --input <name>_partial` merges just these). The resume
   machinery lives in `<name>_partial/checkpoint/` — append-only
   `posts_part_NNNNN.parquet` / `reactors_part_NNNNN.parquet` shards (always parquet,
-  whatever `--format` is) plus a `resume.json` cursor, written every 1,000 messages
+  whatever `--format` is) plus a `resume.json` cursor, written every 150 posts
   and on every reconnect. Each checkpoint only writes the batch since the previous
   one, so its cost and `--resume`'s memory stay flat no matter how much has been
   scraped. A pre-shard `posts.parquet` / `reactors.parquet` from an older run is
@@ -243,6 +249,10 @@ inside `--date-min…--date-max` is a **miss** and gets listed (and written to
 message. Exit code is non-zero if anything was missed. `--comment-sample N`
 additionally re-checks `N` random threads against the server's reply count.
 Needs a free session (not while a `--resume` run is using it).
+
+A multi-channel posts file is fine: only the rows whose `Group` is `--channel` are checked.
+`verify` does not know about `--keyword`, so on a keyword-filtered scrape every post without
+the keyword is reported as missed.
 
 ---
 

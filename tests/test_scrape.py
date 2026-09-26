@@ -3,7 +3,7 @@
 import asyncio
 import json
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
@@ -98,6 +98,7 @@ class FakeClient:
     reaction_peers = []  # peers passed to GetMessageReactionsListRequest; reset per instance
     reaction_ids = []    # message ids passed to GetMessageReactionsListRequest; reset per instance
     calls = []           # (channel, offset_id) for each main-branch iter_messages; reset per instance
+    offset_dates = []    # offset_date for each main-branch iter_messages; reset per instance
     reply_calls = []     # reply_to ids passed to iter_messages (GetReplies); reset per instance
     init_kwargs = {}     # kwargs the last instance was constructed with
 
@@ -105,6 +106,7 @@ class FakeClient:
         type(self).reaction_peers = []
         type(self).reaction_ids = []
         type(self).calls = []
+        type(self).offset_dates = []
         type(self).reply_calls = []
         type(self).init_kwargs = k
 
@@ -149,7 +151,7 @@ class FakeClient:
                 yield m
         return gen()
 
-    def iter_messages(self, channel, search=None, reply_to=None, offset_id=0):
+    def iter_messages(self, channel, search=None, reply_to=None, offset_id=0, offset_date=None):
         if reply_to is not None:
             type(self).reply_calls.append(reply_to)
             async def replies():
@@ -157,6 +159,7 @@ class FakeClient:
                     yield m
             return replies()
         type(self).calls.append((channel, offset_id))
+        type(self).offset_dates.append(offset_date)
         return self._main_gen(offset_id)
 
 
@@ -746,8 +749,8 @@ def test_resume_flag_missing_checkpoint_refuses(monkeypatch, tmp_path):
         scrape.run(Credentials(1, "h"), _params(tmp_path, resume=True))
 
 
-def _reactor_row(mid, rid, reaction, group="@c"):
-    return {"Type": "reactor", "Target": "post", "Group": group, "Message ID": mid,
+def _reactor_row(mid, rid, reaction, group="@c", target="post"):
+    return {"Type": "reactor", "Target": target, "Group": group, "Message ID": mid,
             "Post ID": mid, "Url": "u", "Reactor ID": rid, "Reactor Username": "",
             "Reactor Name": "", "Reaction": reaction, "Date": "d"}
 
@@ -916,3 +919,64 @@ def test_warm_channel_loads_dialogs_once_per_run():
     for channel in ("-1001", "-1002", "-1003"):
         loaded = asyncio.run(scrape._warm_channel(client, scrape._channel_ref(channel), loaded))
     assert client.dialog_calls == 1
+
+
+def test_consolidate_reactors_keeps_post_and_comment_with_same_id(tmp_path):
+    # a channel post and a discussion comment live in different id spaces
+    d = tmp_path / "ckpt"
+    d.mkdir()
+    pd.DataFrame([_reactor_row(500, 1, "🔥"), _reactor_row(500, 1, "🔥", target="comment")]
+                 ).to_parquet(d / "reactors_part_00000.parquet")
+    pd.DataFrame([_reactor_row(501, 1, "🔥", target="comment")]).to_parquet(
+        d / "reactors_part_00001.parquet")
+    pd.DataFrame([_reactor_row(501, 1, "🔥")]).to_parquet(d / "reactors_part_00002.parquet")
+
+    _, n = scrape._consolidate_reactors(d, tmp_path / "out.parquet")
+    assert n == 4
+
+
+def test_comment_text_keeps_apostrophes(tmp_path):
+    class ApostropheClient(FakeClient):
+        def iter_messages(self, channel, reply_to=None, **k):
+            if reply_to is None:
+                return super().iter_messages(channel, **k)
+
+            async def replies():
+                yield _msg(999, datetime(2024, 6, 5, tzinfo=timezone.utc), "don't \"quote\"",
+                           sender=User(id=777, username="bob"))
+            return replies()
+
+    ref = scrape._channel_ref("@c")
+    msg = _msg(20, datetime(2024, 6, 5, tzinfo=timezone.utc), "body", replies=1)
+    row, _ = asyncio.run(scrape._collect_post(ApostropheClient(), ref, msg, _params(tmp_path)))
+    assert json.loads(row["Comments List"])[0]["Comment Content"] == "don't \"quote\""
+
+
+def test_iter_messages_starts_at_date_max(fake_client, tmp_path):
+    params = _params(tmp_path)
+    scrape.run(Credentials(1, "h"), params)
+    assert FakeClient.offset_dates == [params.date_max + timedelta(seconds=1)]
+
+
+def test_no_channel_pause_after_max_messages(fake_client, tmp_path, monkeypatch):
+    waits = []
+
+    async def _sleep(delay, *a, **k):
+        waits.append(delay)
+
+    monkeypatch.setattr(scrape.asyncio, "sleep", _sleep)
+    scrape.run(Credentials(1, "h"), _params(tmp_path, channels=["@a", "@b"], max_messages=1,
+                                            with_participants=False))
+    assert all(w <= 1 for w in waits)
+
+
+def test_ctrl_c_during_channel_pause_keeps_advanced_cursor(fake_client, tmp_path, monkeypatch):
+    async def _sleep(delay, *a, **k):
+        if delay > 1:  # the between-channel pause
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(scrape.asyncio, "sleep", _sleep)
+    with pytest.raises(SystemExit):
+        scrape.run(Credentials(1, "h"), _params(tmp_path, channels=["@a", "@b"]))
+    meta = json.loads((_ckpt(tmp_path) / "resume.json").read_text())
+    assert (meta["channel_index"], meta["last_id"]) == (1, 0)

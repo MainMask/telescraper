@@ -48,6 +48,12 @@ CONNECTION_RETRIES = 2000  # Telethon default 5
 RETRY_DELAY = 15           # seconds between reconnect attempts; default 1
 REQUEST_RETRIES = 10       # per-request retries across reconnects; default 5
 
+# every TelegramClient of a long run (scrape, verify) is built with these
+CLIENT_KWARGS = dict(flood_sleep_threshold=FLOOD_SLEEP_THRESHOLD,
+                     connection_retries=CONNECTION_RETRIES,
+                     retry_delay=RETRY_DELAY,
+                     request_retries=REQUEST_RETRIES)
+
 # In-run automatic resume: restart a channel from the last checkpointed message
 # id when a connection error escapes iter_messages.
 RESUME_MAX_ATTEMPTS = 5    # per-channel restarts before re-raising
@@ -77,7 +83,7 @@ CHECKPOINT_EVERY = 150
 
 # One (person, message, reaction) is unique; a --resume overlap or a repeated
 # reaction-list page can re-emit a row, so exact repeats on this key are dropped.
-REACTOR_DEDUP_KEY = ["Group", "Message ID", "Reactor ID", "Reaction"]
+REACTOR_DEDUP_KEY = ["Group", "Target", "Message ID", "Reactor ID", "Reaction"]
 
 
 def _atomic_parquet(df: pd.DataFrame, dest: Path) -> None:
@@ -121,7 +127,7 @@ def _consolidate_reactors(ckpt_dir: Path, dest: Path) -> tuple[Path, int]:
       * within a shard — on the full row key (a repeated reaction-list page);
       * across shards — at message level: every reactor row of a message is written
         to a single shard (a message's rows are appended together, before the
-        `t_index % CHECKPOINT_EVERY` flush), so the same (Group, Message ID) turning
+        `t_index % CHECKPOINT_EVERY` flush), so the same (Group, Target, Message ID) turning
         up in a later shard is a --resume-overlap re-scrape and its copy is dropped.
     Memory: O(distinct reacted messages) for the seen-set, never O(reactor rows).
 
@@ -134,7 +140,7 @@ def _consolidate_reactors(ckpt_dir: Path, dest: Path) -> tuple[Path, int]:
     try:
         for p in _shard_paths(ckpt_dir, "reactors"):
             part = pd.read_parquet(p).drop_duplicates(subset=REACTOR_DEDUP_KEY)
-            msg_keys = list(zip(part["Group"].astype(str), part["Message ID"]))
+            msg_keys = list(zip(part["Group"].astype(str), part["Target"], part["Message ID"]))
             fresh = [k not in seen for k in msg_keys]
             part = part[fresh]
             if part.empty:
@@ -216,13 +222,18 @@ def channel_slug(channel: str) -> str:
     for prefix in ("t.me/", "telegram.me/", "telegram.dog/"):
         if s.startswith(prefix):
             s = s[len(prefix):]
+    if s.startswith("s/"):  # web preview of the channel
+        s = s[len("s/"):]
+    elif s.startswith("joinchat/"):  # legacy invite, same chat as t.me/+<hash>
+        s = "+" + s[len("joinchat/"):]
     s = s.split("?")[0].split("#")[0]
     s = s.strip("/").split("/")[0]
     return s.lstrip("@")
 
 
 class _ChannelRef(NamedTuple):
-    arg: str | int   # what to pass to Telethon: int for a numeric ID, the raw string otherwise
+    arg: str | int   # what to pass to Telethon: int for a numeric ID, "@name" for a t.me/s/ link,
+                     # a t.me/+hash URL for an invite, else the raw string
     slug: str        # Group column value + output filename component
     url_base: str    # a message URL is f"{url_base}/{message_id}"
 
@@ -238,7 +249,13 @@ def _channel_ref(raw: str) -> _ChannelRef:
         short = utils.resolve_id(cid)[0] if cid < 0 else cid  # -100… marker -> bare id
         return _ChannelRef(cid, f"c{short}", f"https://t.me/c/{short}")
     name = channel_slug(s)
-    return _ChannelRef(raw, name, f"https://t.me/{name}")
+    if "/s/" in s:                 # Telethon can't parse a t.me/s/<name> preview link
+        arg = f"@{name}"
+    elif name.startswith("+"):     # an invite resolves only as a t.me/+<hash> URL
+        arg = f"https://t.me/{name}"
+    else:
+        arg = raw
+    return _ChannelRef(arg, name, f"https://t.me/{name}")
 
 
 async def _warm_channel(client, ref: _ChannelRef, dialogs_loaded: bool) -> bool:
@@ -268,7 +285,7 @@ def parse_date(value: str, *, end_of_day: bool = False) -> datetime:
             raise SystemExit(f"Bad date {value!r}: use DD.MM.YYYY or YYYY-MM-DD")
     if end_of_day and dt.time() == datetime.min.time():
         dt = dt.replace(hour=23, minute=59, second=59)
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _reaction_emoji(reaction) -> str:
@@ -397,7 +414,7 @@ async def _collect_comments(
                     "Comment Author ID": c.sender_id,
                     "Comment Author Username": _sender_username(c),
                     "Comment Author Name": _sender_name(c),
-                    "Comment Content": (c.text or "").replace("'", '"'),
+                    "Comment Content": c.text or "",
                     "Comment Date": c.date.strftime("%Y-%m-%d %H:%M:%S"),
                     "Comment Message ID": c.id,
                     "Comment Author": c.post_author,
@@ -545,15 +562,13 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
         print(SEP)
 
     client = TelegramClient(session_for(creds, params.session), creds.api_id, creds.api_hash,
-                            flood_sleep_threshold=FLOOD_SLEEP_THRESHOLD,
-                            connection_retries=CONNECTION_RETRIES,
-                            retry_delay=RETRY_DELAY,
-                            request_retries=REQUEST_RETRIES)
+                            **CLIENT_KWARGS)
     await client.start(phone=creds.phone, password=creds.password)
 
     i, last_id = resume_channel_index, resume_last_id  # for the Ctrl-C handler below
     snapshot_from = 0  # first shard index not yet written to an `_until_` snapshot
     dialogs_loaded = False
+    channel_closed = False  # the channel's final checkpoint is written; Ctrl-C must not roll it back
     try:
         for i, channel in enumerate(params.channels):
             if i < resume_channel_index:
@@ -567,6 +582,7 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
             attempt = 0
             flood_attempts = 0
             done_channel = False
+            channel_closed = False
             try:
                 ref = _channel_ref(channel)
                 dialogs_loaded = await _warm_channel(client, ref, dialogs_loaded)
@@ -591,7 +607,9 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
                 while True:
                     try:
                         async for message in client.iter_messages(
-                                ref.arg, search=params.keyword or None, offset_id=last_id):
+                                ref.arg, search=params.keyword or None, offset_id=last_id,
+                                # exclusive, hence +1s; a resume's last_id is older anyway
+                                offset_date=params.date_max + timedelta(seconds=1)):
                             if message.date < params.date_min:
                                 done_channel = True
                                 break
@@ -675,6 +693,7 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
                 # (on every exit path from the channel, not just a clean finish)
                 _write_checkpoint(i + 1 if done_channel else i,
                                   0 if done_channel else last_id)
+                channel_closed = True
                 partial_dir.mkdir(exist_ok=True)
                 partial = partial_dir / f"{ref.slug}_until_{t_index:05}"
                 # only this channel's new shards (after a --resume the first one
@@ -689,14 +708,16 @@ async def _scrape(creds: Credentials, params: ScrapeParams) -> pd.DataFrame:
 
             # be gentle: at least 60s per channel
             spent = time.monotonic() - loop_start
-            if spent < 60 and i < len(params.channels) - 1:
+            if (spent < 60 and i < len(params.channels) - 1
+                    and not (t_index >= params.max_messages or time_is_up())):
                 await asyncio.sleep(60 - spent)
     except (KeyboardInterrupt, asyncio.CancelledError):
         # asyncio.run() turns a SIGINT into task cancellation, i.e. a
         # CancelledError raised at the current await - not KeyboardInterrupt - so
         # both must be caught here for `systemctl stop` to checkpoint.
         print()
-        _write_checkpoint(i, last_id)
+        if not channel_closed:
+            _write_checkpoint(i, last_id)
         raise
     finally:
         await client.disconnect()

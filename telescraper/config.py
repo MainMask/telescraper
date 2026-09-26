@@ -1,9 +1,9 @@
-"""Load Telegram API credentials from the environment / a .env file."""
+"""Load Telegram API credentials from the environment / a .env file in the current directory (or a parent)."""
 
 import os
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from telethon.sessions import StringSession
 
 
@@ -18,7 +18,7 @@ class Credentials:
 
 def load_credentials() -> Credentials:
     """Read TG_* variables. Real environment variables win over the .env file."""
-    load_dotenv()
+    load_dotenv(find_dotenv(usecwd=True))  # the cwd (or a parent), not the package's install dir
 
     api_id = os.getenv("TG_API_ID")
     api_hash = os.getenv("TG_API_HASH")

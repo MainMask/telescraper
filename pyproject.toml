@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "telethon<2",
     "python-dotenv",
-    "pandas",
+    "pandas>=2",
     "numpy",
     "tqdm",
     "pyarrow",
